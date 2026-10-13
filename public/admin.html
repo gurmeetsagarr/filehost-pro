@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Master Panel — FileHost Pro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="/socket.io/socket.io.js"></script>
+  <style>body { font-family: 'Inter', sans-serif; background: #060610; color: #e2e8f0; }</style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
+    <div>
+      <h1 class="font-bold text-white text-base">Master Admin Control Panel</h1>
+      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control)</p>
+    </div>
+    <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-2 rounded-lg border border-rose-500/20">Logout</button>
+  </header>
+
+  <main class="flex-1 p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6">
+        <h2 class="text-sm font-semibold text-white mb-4">All Users & Upload Activity Tracker</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 font-mono">
+                <th class="pb-3">UPLOADER</th>
+                <th class="pb-3">FILE NAME</th>
+                <th class="pb-3">SIZE</th>
+                <th class="pb-3 text-right">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="adminTableBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[500px]">
+      <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2">Live System Terminal</div>
+      <div id="terminal" class="flex-1 overflow-y-auto space-y-1"></div>
+    </div>
+  </main>
+
+  <script>
+    async function logout() { await fetch('/api/auth/logout', { method: 'POST' }); window.location.href = '/'; }
+
+    async function loadAdminData() {
+      const res = await fetch('/api/files');
+      const data = await res.json();
+      if (data.success) {
+        const tbody = document.getElementById('adminTableBody');
+        tbody.innerHTML = '';
+        if (data.files.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">No files uploaded by any user yet.</td></tr>`;
+          return;
+        }
+        data.files.forEach(f => {
+          tbody.innerHTML += `
+            <tr class="hover:bg-slate-800/40">
+              <td class="py-3 font-semibold text-indigo-400">${f.uploader}</td>
+              <td class="py-3 text-slate-200">${f.originalname}</td>
+              <td class="py-3 text-slate-400 font-mono">${(f.size/1024).toFixed(2)} KB</td>
+              <td class="py-3 text-right space-x-2">
+                <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
+                <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
+              </td>
+            </tr>`;
+        });
+      }
+    }
+
+    async function deleteFile(filename) {
+      if (confirm('Admin action: Delete this file?')) {
+        await fetch(`/api/delete/${filename}`, { method: 'DELETE' });
+        loadAdminData();
+      }
+    }
+
+    const socket = io();
+    socket.on('terminal-log', (d) => {
+      const term = document.getElementById('terminal');
+      term.innerHTML += `<div>[${d.timestamp}] ${d.message}</div>`;
+      term.scrollTop = term.scrollHeight;
+      loadAdminData();
+    });
+
+    loadAdminData();
+  </script>
+</body>
+</html>

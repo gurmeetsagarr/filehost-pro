@@ -12,16 +12,23 @@
 <body class="min-h-screen flex flex-col">
   <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
     <div>
-      <h1 class="font-bold text-white text-base">Master Admin Control Panel</h1>
-      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control)</p>
+      <h1 class="font-bold text-white text-base">Master Admin Hosting & Control Panel</h1>
+      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control + Execution)</p>
     </div>
     <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-2 rounded-lg border border-rose-500/20">Logout</button>
   </header>
 
   <main class="flex-1 p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
     <div class="lg:col-span-2 space-y-6">
-      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6">
-        <h2 class="text-sm font-semibold text-white mb-4">All Users & Upload Activity Tracker</h2>
+      <!-- Admin Upload Box -->
+      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
+        <h2 class="text-sm font-semibold text-white mb-3">Admin File Upload & Host</h2>
+        <input type="file" id="adminFileInput" class="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:bg-indigo-600 file:text-white cursor-pointer">
+        <button onclick="adminUpload()" class="mt-3 w-full py-2.5 bg-indigo-600 rounded-xl text-xs font-semibold text-white hover:bg-indigo-500 transition">Upload & Host</button>
+      </div>
+
+      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
+        <h2 class="text-sm font-semibold text-white mb-4">All Users & Admin Hosted Files Tracker</h2>
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs">
             <thead>
@@ -38,14 +45,27 @@
       </div>
     </div>
 
-    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[500px]">
-      <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2">Live System Terminal</div>
+    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[550px] shadow-xl">
+      <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2 flex justify-between items-center">
+        <span>Live System Terminal</span>
+        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
+      </div>
       <div id="terminal" class="flex-1 overflow-y-auto space-y-1"></div>
     </div>
   </main>
 
   <script>
     async function logout() { await fetch('/api/auth/logout', { method: 'POST' }); window.location.href = '/'; }
+
+    async function adminUpload() {
+      const file = document.getElementById('adminFileInput').files[0];
+      if (!file) return alert('Select file!');
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) { alert('Uploaded successfully!'); loadAdminData(); }
+    }
 
     async function loadAdminData() {
       const res = await fetch('/api/files');
@@ -54,22 +74,32 @@
         const tbody = document.getElementById('adminTableBody');
         tbody.innerHTML = '';
         if (data.files.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">No files uploaded by any user yet.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">No files hosted yet.</td></tr>`;
           return;
         }
         data.files.forEach(f => {
+          let ext = f.originalname.split('.').pop().toLowerCase();
+          let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="text-emerald-400 hover:underline font-medium mr-2">Run</button>` : '';
+          let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="text-indigo-400 hover:underline font-medium mr-2">View</a>` : '';
+
           tbody.innerHTML += `
             <tr class="hover:bg-slate-800/40">
               <td class="py-3 font-semibold text-indigo-400">${f.uploader}</td>
               <td class="py-3 text-slate-200">${f.originalname}</td>
               <td class="py-3 text-slate-400 font-mono">${(f.size/1024).toFixed(2)} KB</td>
               <td class="py-3 text-right space-x-2">
+                ${runBtn}
+                ${viewBtn}
                 <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
                 <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
               </td>
             </tr>`;
         });
       }
+    }
+
+    async function runFile(filename) {
+      await fetch(`/api/run/${filename}`, { method: 'POST' });
     }
 
     async function deleteFile(filename) {
@@ -82,7 +112,11 @@
     const socket = io();
     socket.on('terminal-log', (d) => {
       const term = document.getElementById('terminal');
-      term.innerHTML += `<div>[${d.timestamp}] ${d.message}</div>`;
+      let color = 'text-slate-300';
+      if (d.type === 'success') color = 'text-emerald-400';
+      if (d.type === 'error') color = 'text-rose-400';
+      if (d.type === 'warning') color = 'text-amber-400';
+      term.innerHTML += `<div class="leading-relaxed"><span class="text-slate-500">[${d.timestamp}]</span> <span class="${color}">${d.message}</span></div>`;
       term.scrollTop = term.scrollHeight;
       loadAdminData();
     });

@@ -5,6 +5,7 @@ const session = require('express-session');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +17,6 @@ const dbFile = path.join(__dirname, 'users.json');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 if (!fs.existsSync(dbFile)) fs.writeFileSync(dbFile, JSON.stringify([]));
 
-// Helper to read/write users
 const getUsers = () => JSON.parse(fs.readFileSync(dbFile));
 const saveUsers = (users) => fs.writeFileSync(dbFile, JSON.stringify(users, null, 2));
 
@@ -32,76 +32,65 @@ const upload = multer({ storage: storage });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Serve uploaded files publicly so HTML/CSS/JS or assets can be accessed directly
+app.use('/uploads', express.static(uploadDir));
 
 app.use(session({
-    secret: 'gurmeet-secret-high-end-0711',
+    secret: 'gurmeet-matrix-secret-0711',
     resave: false,
     saveUninitialized: false,
     cookie: { maxAge: 8 * 60 * 60 * 1000 }
 }));
 
-function broadcastLog(io, message, type = 'info') {
+function broadcastLog(message, type = 'info') {
     const timestamp = new Date().toLocaleTimeString();
     io.emit('terminal-log', { timestamp, message, type });
 }
 
-// --- AUTH ROUTES ---
-
-// User Signup
+// --- AUTH ---
 app.post('/api/auth/signup', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ success: false, error: 'All fields required' });
-    
     let users = getUsers();
     if (users.find(u => u.username === username) || username === 'gurmeet') {
-        return res.status(400).json({ success: false, error: 'Username already exists' });
+        return res.status(400).json({ success: false, error: 'Username taken' });
     }
-
-    users.push({ username, password, createdAt: new Date(), files: [], activeTime: 0 });
+    users.push({ username, password, files: [] });
     saveUsers(users);
-    broadcastLog(io, `New user registered: ${username}`, 'success');
+    broadcastLog(`New user registered: ${username}`, 'success');
     res.json({ success: true });
 });
 
-// Login (Admin or User)
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
-
     if (username === 'gurmeet' && password === 'gurmeet0711') {
-        req.session.user = { username, role: 'admin', loginTime: new Date() };
-        broadcastLog(io, `Admin 'gurmeet' logged in.`, 'success');
+        req.session.user = { username, role: 'admin' };
+        broadcastLog(`Admin 'gurmeet' logged in.`, 'success');
         return res.json({ success: true, role: 'admin' });
     }
-
     let users = getUsers();
     let user = users.find(u => u.username === username && u.password === password);
     if (user) {
-        req.session.user = { username, role: 'user', loginTime: new Date() };
-        broadcastLog(io, `User '${username}' logged in.`, 'info');
+        req.session.user = { username, role: 'user' };
+        broadcastLog(`User '${username}' logged in.`, 'info');
         return res.json({ success: true, role: 'user' });
     }
-
-    broadcastLog(io, `Failed login attempt for: '${username}'`, 'error');
-    res.status(401).json({ success: false, error: 'Invalid username or password' });
+    res.status(401).json({ success: false, error: 'Invalid credentials' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
     req.session.destroy(() => res.json({ success: true }));
 });
 
-// --- PAGE ROUTING ---
 app.get('/dashboard', (req, res) => {
     if (!req.session.user) return res.redirect('/');
-    if (req.session.user.role === 'admin') {
-        res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-    } else {
-        res.sendFile(path.join(__dirname, 'public', 'user.html'));
-    }
+    if (req.session.user.role === 'admin') res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+    else res.sendFile(path.join(__dirname, 'public', 'user.html'));
 });
 
-// --- FILE MANAGEMENT ---
+// --- FILE UPLOAD & HOSTING ---
 app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file || !req.session.user) return res.status(400).json({ success: false, error: 'Unauthorized or no file' });
+    if (!req.file || !req.session.user) return res.status(400).json({ success: false });
 
     const fileInfo = {
         originalname: req.file.originalname,
@@ -118,58 +107,96 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
             user.files.push(fileInfo);
             saveUsers(users);
         }
+    } else {
+        // Admin files tracking
+        let users = getUsers();
+        let adminUser = users.find(u => u.username === 'gurmeet_admin_storage');
+        if (!adminUser) {
+            users.push({ username: 'gurmeet_admin_storage', files: [fileInfo] });
+        } else {
+            adminUser.files.push(fileInfo);
+        }
+        saveUsers(users);
     }
 
-    broadcastLog(io, `File uploaded by ${req.session.user.username}: ${req.file.originalname}`, 'success');
+    broadcastLog(`File uploaded [${req.session.user.username}]: ${req.file.originalname}`, 'success');
     res.json({ success: true, file: fileInfo });
 });
 
-// Get Files (Admin sees all users' files, User sees only their files)
 app.get('/api/files', (req, res) => {
     if (!req.session.user) return res.status(401).json({ success: false });
-
+    let users = getUsers();
     if (req.session.user.role === 'admin') {
-        let users = getUsers();
         let allFiles = [];
         users.forEach(u => {
-            if (u.files) {
-                u.files.forEach(f => allFiles.push({ ...f, uploader: u.username }));
-            }
+            if (u.files) u.files.forEach(f => allFiles.push({ ...f, uploader: u.username }));
         });
-        // Also get root uploads
-        res.json({ success: true, users: users, files: allFiles });
+        res.json({ success: true, files: allFiles });
     } else {
-        let users = getUsers();
         let user = users.find(u => u.username === req.session.user.username);
         res.json({ success: true, files: user ? user.files || [] : [] });
     }
 });
 
+// --- SCRIPT EXECUTION ENGINE (THE REAL HOSTING) ---
+app.post('/api/run/:filename', (req, res) => {
+    if (!req.session.user) return res.status(401).json({ success: false });
+    const filename = req.params.filename;
+    const filePath = path.join(uploadDir, filename);
+
+    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
+
+    const ext = path.extname(filename).toLowerCase();
+    broadcastLog(`Starting execution for: ${filename} by ${req.session.user.username}`, 'warning');
+
+    let child;
+    if (ext === '.py') {
+        child = spawn('python3', [filePath]);
+    } else if (ext === '.js') {
+        child = spawn('node', [filePath]);
+    } else {
+        return res.json({ success: false, error: 'Only .py and .js scripts can be executed in terminal. HTML can be viewed directly via Hosted Link.' });
+    }
+
+    child.stdout.on('data', (data) => {
+        broadcastLog(`[OUTPUT (${filename})] ${data.toString().trim()}`, 'info');
+    });
+
+    child.stderr.on('data', (data) => {
+        broadcastLog(`[ERROR (${filename})] ${data.toString().trim()}`, 'error');
+    });
+
+    child.on('close', (code) => {
+        broadcastLog(`Process ${filename} exited with code ${code}`, code === 0 ? 'success' : 'error');
+    });
+
+    res.json({ success: true, message: 'Execution started in live terminal.' });
+});
+
 app.get('/api/download/:filename', (req, res) => {
     const filePath = path.join(uploadDir, req.params.filename);
     if (fs.existsSync(filePath)) res.download(filePath);
-    else res.status(404).json({ error: 'File not found' });
+    else res.status(404).json({ error: 'Not found' });
 });
 
 app.delete('/api/delete/:filename', (req, res) => {
     const filePath = path.join(uploadDir, req.params.filename);
     if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        // Remove from user db if exists
         let users = getUsers();
         users.forEach(u => {
             if (u.files) u.files = u.files.filter(f => f.filename !== req.params.filename);
         });
         saveUsers(users);
-        broadcastLog(io, `File deleted: ${req.params.filename}`, 'warning');
+        broadcastLog(`File deleted: ${req.params.filename}`, 'error');
         res.json({ success: true });
     } else {
-        res.status(404).json({ error: 'File not found' });
+        res.status(404).json({ error: 'Not found' });
     }
 });
 
 io.on('connection', (socket) => {
-    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to High-End Execution Terminal.', type: 'info' });
+    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to High-End Execution Engine.', type: 'info' });
 });
 
 const PORT = process.env.PORT || 3000;

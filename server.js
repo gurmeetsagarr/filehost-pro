@@ -32,7 +32,6 @@ const upload = multer({ storage: storage });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-// Serve uploaded files publicly so HTML/CSS/JS or assets can be accessed directly
 app.use('/uploads', express.static(uploadDir));
 
 app.use(session({
@@ -108,7 +107,6 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
             saveUsers(users);
         }
     } else {
-        // Admin files tracking
         let users = getUsers();
         let adminUser = users.find(u => u.username === 'gurmeet_admin_storage');
         if (!adminUser) {
@@ -138,7 +136,32 @@ app.get('/api/files', (req, res) => {
     }
 });
 
-// --- SCRIPT EXECUTION ENGINE (THE REAL HOSTING) ---
+// --- INTERACTIVE TERMINAL COMMAND EXECUTOR ---
+app.post('/api/terminal/exec', (req, res) => {
+    if (!req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    const { command } = req.body;
+    if (!command) return res.status(400).json({ success: false, error: 'No command provided' });
+
+    broadcastLog(`$ ${command}`, 'warning');
+
+    const child = spawn(command, { shell: true, cwd: __dirname });
+
+    child.stdout.on('data', (data) => {
+        broadcastLog(data.toString().trim(), 'info');
+    });
+
+    child.stderr.on('data', (data) => {
+        broadcastLog(data.toString().trim(), 'error');
+    });
+
+    child.on('close', (code) => {
+        broadcastLog(`Command exited with code ${code}`, code === 0 ? 'success' : 'error');
+    });
+
+    res.json({ success: true });
+});
+
+// --- SCRIPT EXECUTION ENGINE ---
 app.post('/api/run/:filename', (req, res) => {
     if (!req.session.user) return res.status(401).json({ success: false });
     const filename = req.params.filename;
@@ -151,26 +174,26 @@ app.post('/api/run/:filename', (req, res) => {
 
     let child;
     if (ext === '.py') {
-        child = spawn('python3', [filePath]);
+        child = spawn('python3', [filePath], { cwd: uploadDir });
     } else if (ext === '.js') {
-        child = spawn('node', [filePath]);
+        child = spawn('node', [filePath], { cwd: uploadDir });
     } else {
-        return res.json({ success: false, error: 'Only .py and .js scripts can be executed in terminal. HTML can be viewed directly via Hosted Link.' });
+        return res.json({ success: false, error: 'Unsupported format' });
     }
 
     child.stdout.on('data', (data) => {
-        broadcastLog(`[OUTPUT (${filename})] ${data.toString().trim()}`, 'info');
+        broadcastLog(`[OUTPUT] ${data.toString().trim()}`, 'info');
     });
 
     child.stderr.on('data', (data) => {
-        broadcastLog(`[ERROR (${filename})] ${data.toString().trim()}`, 'error');
+        broadcastLog(`[ERROR] ${data.toString().trim()}`, 'error');
     });
 
     child.on('close', (code) => {
-        broadcastLog(`Process ${filename} exited with code ${code}`, code === 0 ? 'success' : 'error');
+        broadcastLog(`Process exited with code ${code}`, code === 0 ? 'success' : 'error');
     });
 
-    res.json({ success: true, message: 'Execution started in live terminal.' });
+    res.json({ success: true });
 });
 
 app.get('/api/download/:filename', (req, res) => {
@@ -196,7 +219,7 @@ app.delete('/api/delete/:filename', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to High-End Execution Engine.', type: 'info' });
+    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to Interactive Execution Terminal.', type: 'info' });
 });
 
 const PORT = process.env.PORT || 3000;

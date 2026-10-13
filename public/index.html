@@ -1,147 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FileHost Pro — Secure Login</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileHost Pro — Auth</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Inter', sans-serif;
-      background: #060610;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    .bg-grid {
-      position: fixed; inset: 0;
-      background-image: linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px);
-      background-size: 44px 44px; z-index: 0;
-    }
-    .orb {
-      position: fixed; border-radius: 50%; filter: blur(80px); z-index: 0; opacity: 0.35;
-      animation: drift 12s ease-in-out infinite alternate;
-    }
-    .orb-1 { width: 500px; height: 500px; background: #4f46e5; top: -150px; left: -100px; }
-    .orb-2 { width: 400px; height: 400px; background: #7c3aed; bottom: -100px; right: -100px; }
-    @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(30px, -30px) scale(1.08); } }
-    .glass-card {
-      position: relative; z-index: 10;
-      background: rgba(15, 15, 30, 0.75);
-      backdrop-filter: blur(24px);
-      border: 1px solid rgba(99,102,241,0.2);
-      border-radius: 20px;
-      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 60px rgba(79,70,229,0.15);
-      width: 420px; padding: 44px 40px;
-    }
-    .logo-mark {
-      width: 52px; height: 52px; background: linear-gradient(135deg, #4f46e5, #7c3aed);
-      border-radius: 14px; display: flex; align-items: center; justify-content: center;
-      font-size: 24px; box-shadow: 0 8px 24px rgba(79,70,229,0.45); margin: 0 auto 20px;
-    }
-    .field-wrap { position: relative; margin-bottom: 18px; }
-    .field-label { display: block; font-size: 12px; font-weight: 500; color: #94a3b8; letter-spacing: 0.05em; margin-bottom: 8px; }
-    .field-input {
-      width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 10px; padding: 12px 16px 12px 42px; color: #e2e8f0; font-size: 14px; outline: none;
-    }
-    .field-input:focus { border-color: rgba(99,102,241,0.6); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-    .field-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #4f46e5; }
-    .btn-primary {
-      width: 100%; padding: 13px; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-      border: none; border-radius: 10px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
-      box-shadow: 0 4px 20px rgba(79,70,229,0.4); display: flex; align-items: center; justify-content: center; gap: 8px;
-    }
-    .alert { padding: 11px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 18px; display: none; align-items: center; gap: 8px; }
-    .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
-    .alert.show { display: flex; }
-    .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 8px #22c55e; }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>body { font-family: 'Inter', sans-serif; background: #060610; color: #e2e8f0; }</style>
 </head>
-<body>
-  <div class="bg-grid"></div>
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-  <div class="glass-card">
-    <div class="logo-mark">⬡</div>
-    <h1 style="text-align:center;font-size:22px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">FileHost Pro</h1>
-    <p style="text-align:center;font-size:13px;color:#64748b;margin-bottom:32px;">Secure Admin Portal</p>
-    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:28px;">
-      <span class="status-dot"></span>
-      <span style="font-size:12px;color:#64748b;font-family:'JetBrains Mono',monospace;">System operational</span>
+<body class="min-h-screen flex items-center justify-center p-4">
+  <div class="bg-slate-900/80 border border-indigo-900/40 rounded-2xl p-8 w-full max-w-md backdrop-blur-xl shadow-2xl">
+    <div class="text-center mb-6">
+      <div class="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-xl mx-auto flex items-center justify-center text-xl font-bold text-white mb-2">⬡</div>
+      <h1 class="text-xl font-bold text-white">FileHost Pro Matrix</h1>
+      <p class="text-xs text-slate-400">Sign in or create account</p>
     </div>
-    <div class="alert alert-error" id="errorAlert">
-      <span id="errorMsg">Invalid credentials.</span>
+
+    <div class="flex bg-slate-950 p-1 rounded-xl mb-6 text-xs font-medium">
+      <button onclick="switchTab('login')" id="loginTabBtn" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white transition">Sign In</button>
+      <button onclick="switchTab('signup')" id="signupTabBtn" class="flex-1 py-2 rounded-lg text-slate-400 transition">Sign Up</button>
     </div>
-    <form id="loginForm" autocomplete="off">
-      <div class="field-wrap">
-        <label class="field-label">USERNAME</label>
-        <div style="position:relative">
-          <span class="field-icon">👤</span>
-          <input class="field-input" type="text" id="username" placeholder="Enter username" required />
-        </div>
+
+    <div id="alertBox" class="hidden mb-4 p-3 rounded-lg text-xs font-medium"></div>
+
+    <!-- Login Form -->
+    <form id="authForm" class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">USERNAME</label>
+        <input type="text" id="username" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-indigo-500 outline-none">
       </div>
-      <div class="field-wrap">
-        <label class="field-label">PASSWORD</label>
-        <div style="position:relative">
-          <span class="field-icon">🔒</span>
-          <input class="field-input" type="password" id="password" placeholder="Enter password" required />
-        </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">PASSWORD</label>
+        <input type="password" id="password" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-indigo-500 outline-none">
       </div>
-      <button class="btn-primary" type="submit" id="loginBtn">
-        <span id="btnText">Sign In</span>
-        <div class="spinner" id="spinner"></div>
-      </button>
+      <button type="submit" id="submitBtn" class="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl text-white font-semibold text-sm shadow-lg hover:opacity-90 transition">Sign In</button>
     </form>
   </div>
+
   <script>
-    const form = document.getElementById('loginForm');
-    const errorAlert = document.getElementById('errorAlert');
-    const errorMsg = document.getElementById('errorMsg');
-    const loginBtn = document.getElementById('loginBtn');
-    const spinner = document.getElementById('spinner');
-    const btnText = document.getElementById('btnText');
+    let isLogin = true;
+    function switchTab(tab) {
+      isLogin = (tab === 'login');
+      document.getElementById('loginTabBtn').className = isLogin ? 'flex-1 py-2 rounded-lg bg-indigo-600 text-white transition' : 'flex-1 py-2 rounded-lg text-slate-400 transition';
+      document.getElementById('signupTabBtn').className = !isLogin ? 'flex-1 py-2 rounded-lg bg-indigo-600 text-white transition' : 'flex-1 py-2 rounded-lg text-slate-400 transition';
+      document.getElementById('submitBtn').textContent = isLogin ? 'Sign In' : 'Create Account';
+    }
 
-    function showError(msg) { errorMsg.textContent = msg; errorAlert.classList.add('show'); }
-    function hideError() { errorAlert.classList.remove('show'); }
-
-    form.addEventListener('submit', async (e) => {
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      hideError();
-      loginBtn.disabled = true;
-      spinner.style.display = 'block';
-      btnText.textContent = 'Authenticating...';
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/signup';
 
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: document.getElementById('username').value.trim(),
-            password: document.getElementById('password').value
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      const alertBox = document.getElementById('alertBox');
+      alertBox.classList.remove('hidden');
+
+      if (data.success) {
+        if (isLogin) {
           window.location.href = '/dashboard';
         } else {
-          showError(data.error || 'Authentication failed.');
-          loginBtn.disabled = false;
-          spinner.style.display = 'none';
-          btnText.textContent = 'Sign In';
+          alertBox.className = 'mb-4 p-3 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+          alertBox.textContent = 'Account created successfully! Now sign in.';
+          switchTab('login');
         }
-      } catch (err) {
-        showError('Network error. Is the server running?');
-        loginBtn.disabled = false;
-        spinner.style.display = 'none';
-        btnText.textContent = 'Sign In';
+      } else {
+        alertBox.className = 'mb-4 p-3 rounded-lg text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+        alertBox.textContent = data.error || 'Authentication failed';
       }
     });
   </script>

@@ -12,15 +12,14 @@
 <body class="min-h-screen flex flex-col">
   <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
     <div>
-      <h1 class="font-bold text-white text-base">Master Admin Hosting & Control Panel</h1>
-      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control + Execution)</p>
+      <h1 class="font-bold text-white text-base">Master Admin Hosting & Interactive Terminal</h1>
+      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control + Terminal)</p>
     </div>
     <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-2 rounded-lg border border-rose-500/20">Logout</button>
   </header>
 
   <main class="flex-1 p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
     <div class="lg:col-span-2 space-y-6">
-      <!-- Admin Upload Box -->
       <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
         <h2 class="text-sm font-semibold text-white mb-3">Admin File Upload & Host</h2>
         <input type="file" id="adminFileInput" class="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:bg-indigo-600 file:text-white cursor-pointer">
@@ -28,7 +27,7 @@
       </div>
 
       <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
-        <h2 class="text-sm font-semibold text-white mb-4">All Users & Admin Hosted Files Tracker</h2>
+        <h2 class="text-sm font-semibold text-white mb-4">All Hosted Files Tracker</h2>
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs">
             <thead>
@@ -45,12 +44,17 @@
       </div>
     </div>
 
-    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[550px] shadow-xl">
+    <!-- Admin Interactive Terminal -->
+    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[600px] shadow-xl">
       <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2 flex justify-between items-center">
-        <span>Live System Terminal</span>
+        <span>Interactive Master Terminal</span>
         <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
       </div>
-      <div id="terminal" class="flex-1 overflow-y-auto space-y-1"></div>
+      <div id="terminal" class="flex-1 overflow-y-auto space-y-1 pr-1"></div>
+      <div class="pt-3 border-t border-slate-800 flex gap-2">
+        <input type="text" id="terminalInput" placeholder="Type command (e.g. pip install aiohttp)..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500">
+        <button onclick="sendTerminalCommand()" class="bg-indigo-600 px-4 py-2 rounded-xl text-xs text-white font-semibold hover:bg-indigo-500 transition">Run</button>
+      </div>
     </div>
   </main>
 
@@ -64,7 +68,7 @@
       formData.append('file', file);
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       const data = await res.json();
-      if (data.success) { alert('Uploaded successfully!'); loadAdminData(); }
+      if (data.success) { alert('Uploaded!'); loadAdminData(); }
     }
 
     async function loadAdminData() {
@@ -98,16 +102,27 @@
       }
     }
 
-    async function runFile(filename) {
-      await fetch(`/api/run/${filename}`, { method: 'POST' });
+    async function runFile(filename) { await fetch(`/api/run/${filename}`, { method: 'POST' }); }
+    async function deleteFile(filename) {
+      if (confirm('Delete?')) { await fetch(`/api/delete/${filename}`, { method: 'DELETE' }); loadAdminData(); }
     }
 
-    async function deleteFile(filename) {
-      if (confirm('Admin action: Delete this file?')) {
-        await fetch(`/api/delete/${filename}`, { method: 'DELETE' });
-        loadAdminData();
-      }
+    async function sendTerminalCommand() {
+      const input = document.getElementById('terminalInput');
+      const cmd = input.value.trim();
+      if (!cmd) return;
+      input.value = false || input.value.trim();
+      input.value = '';
+      await fetch('/api/terminal/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd })
+      });
     }
+
+    document.getElementById('terminalInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendTerminalCommand();
+    });
 
     const socket = io();
     socket.on('terminal-log', (d) => {

@@ -143,13 +143,20 @@ app.get('/api/files', (req, res) => {
     }
 });
 
+// INTERACTIVE TERMINAL EXECUTOR WITH AUTO PEP-668 BYPASS FOR PIP
 app.post('/api/terminal/exec', (req, res) => {
     if (!req.session || !req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
-    const { command } = req.body;
+    let { command } = req.body;
     if (!command) return res.status(400).json({ success: false, error: 'No command' });
 
-    broadcastLog(`$ ${command}`, 'warning');
-    const child = spawn(command, { shell: true, cwd: uploadDir });
+    // Auto-fix for python pip restriction
+    let cleanCmd = command.trim();
+    if (cleanCmd.startsWith('pip install') && !cleanCmd.includes('--break-system-packages')) {
+        cleanCmd = cleanCmd.replace('pip install', 'pip install --break-system-packages');
+    }
+
+    broadcastLog(`$ ${cleanCmd}`, 'warning');
+    const child = spawn(cleanCmd, { shell: true, cwd: uploadDir });
 
     child.stdout.on('data', (data) => broadcastLog(data.toString().trim(), 'info'));
     child.stderr.on('data', (data) => broadcastLog(data.toString().trim(), 'error'));

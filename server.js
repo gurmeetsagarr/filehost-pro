@@ -8,6 +8,8 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 const app = express();
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 const io = new Server(server);
 
@@ -38,7 +40,12 @@ app.use(session({
     secret: 'gurmeet-matrix-secret-0711',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 8 * 60 * 60 * 1000 }
+    proxy: true,
+    cookie: { 
+        maxAge: 8 * 60 * 60 * 1000,
+        secure: false,
+        sameSite: 'lax'
+    }
 }));
 
 function broadcastLog(message, type = 'info') {
@@ -46,7 +53,6 @@ function broadcastLog(message, type = 'info') {
     io.emit('terminal-log', { timestamp, message, type });
 }
 
-// --- AUTH ---
 app.post('/api/auth/signup', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ success: false, error: 'All fields required' });
@@ -87,9 +93,11 @@ app.get('/dashboard', (req, res) => {
     else res.sendFile(path.join(__dirname, 'public', 'user.html'));
 });
 
-// --- FILE UPLOAD & HOSTING ---
 app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file || !req.session.user) return res.status(400).json({ success: false });
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file provided' });
+    if (!req.session || !req.session.user) {
+        return res.status(401).json({ success: false, error: 'Session expired. Please login again.' });
+    }
 
     const fileInfo = {
         originalname: req.file.originalname,
@@ -98,31 +106,30 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
         uploadTime: new Date()
     };
 
-    if (req.session.user.role === 'user') {
-        let users = getUsers();
+    let users = getUsers();
+    if (req.session.user.role === 'admin') {
+        let adminUser = users.find(u => u.username === 'gurmeet');
+        if (!adminUser) {
+            users.push({ username: 'gurmeet', password: 'gurmeet0711', files: [fileInfo] });
+        } else {
+            if (!adminUser.files) adminUser.files = [];
+            adminUser.files.push(fileInfo);
+        }
+    } else {
         let user = users.find(u => u.username === req.session.user.username);
         if (user) {
             if (!user.files) user.files = [];
             user.files.push(fileInfo);
-            saveUsers(users);
         }
-    } else {
-        let users = getUsers();
-        let adminUser = users.find(u => u.username === 'gurmeet_admin_storage');
-        if (!adminUser) {
-            users.push({ username: 'gurmeet_admin_storage', files: [fileInfo] });
-        } else {
-            adminUser.files.push(fileInfo);
-        }
-        saveUsers(users);
     }
+    saveUsers(users);
 
     broadcastLog(`File uploaded [${req.session.user.username}]: ${req.file.originalname}`, 'success');
     res.json({ success: true, file: fileInfo });
 });
 
 app.get('/api/files', (req, res) => {
-    if (!req.session.user) return res.status(401).json({ success: false });
+    if (!req.session || !req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
     let users = getUsers();
     if (req.session.user.role === 'admin') {
         let allFiles = [];
@@ -136,34 +143,23 @@ app.get('/api/files', (req, res) => {
     }
 });
 
-// --- INTERACTIVE TERMINAL COMMAND EXECUTOR ---
 app.post('/api/terminal/exec', (req, res) => {
-    if (!req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    if (!req.session || !req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
     const { command } = req.body;
-    if (!command) return res.status(400).json({ success: false, error: 'No command provided' });
+    if (!command) return res.status(400).json({ success: false, error: 'No command' });
 
     broadcastLog(`$ ${command}`, 'warning');
+    const child = spawn(command, { shell: true, cwd: uploadDir });
 
-    const child = spawn(command, { shell: true, cwd: __dirname });
-
-    child.stdout.on('data', (data) => {
-        broadcastLog(data.toString().trim(), 'info');
-    });
-
-    child.stderr.on('data', (data) => {
-        broadcastLog(data.toString().trim(), 'error');
-    });
-
-    child.on('close', (code) => {
-        broadcastLog(`Command exited with code ${code}`, code === 0 ? 'success' : 'error');
-    });
+    child.stdout.on('data', (data) => broadcastLog(data.toString().trim(), 'info'));
+    child.stderr.on('data', (data) => broadcastLog(data.toString().trim(), 'error'));
+    child.on('close', (code) => broadcastLog(`Command exited with code ${code}`, code === 0 ? 'success' : 'error'));
 
     res.json({ success: true });
 });
 
-// --- SCRIPT EXECUTION ENGINE ---
 app.post('/api/run/:filename', (req, res) => {
-    if (!req.session.user) return res.status(401).json({ success: false });
+    if (!req.session || !req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
     const filename = req.params.filename;
     const filePath = path.join(uploadDir, filename);
 
@@ -181,17 +177,9 @@ app.post('/api/run/:filename', (req, res) => {
         return res.json({ success: false, error: 'Unsupported format' });
     }
 
-    child.stdout.on('data', (data) => {
-        broadcastLog(`[OUTPUT] ${data.toString().trim()}`, 'info');
-    });
-
-    child.stderr.on('data', (data) => {
-        broadcastLog(`[ERROR] ${data.toString().trim()}`, 'error');
-    });
-
-    child.on('close', (code) => {
-        broadcastLog(`Process exited with code ${code}`, code === 0 ? 'success' : 'error');
-    });
+    child.stdout.on('data', (data) => broadcastLog(`[OUTPUT] ${data.toString().trim()}`, 'info'));
+    child.stderr.on('data', (data) => broadcastLog(`[ERROR] ${data.toString().trim()}`, 'error'));
+    child.on('close', (code) => broadcastLog(`Process exited with code ${code}`, code === 0 ? 'success' : 'error'));
 
     res.json({ success: true });
 });
@@ -203,6 +191,7 @@ app.get('/api/download/:filename', (req, res) => {
 });
 
 app.delete('/api/delete/:filename', (req, res) => {
+    if (!req.session || !req.session.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
     const filePath = path.join(uploadDir, req.params.filename);
     if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
@@ -219,7 +208,7 @@ app.delete('/api/delete/:filename', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to Interactive Execution Terminal.', type: 'info' });
+    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to Execution & Terminal Engine.', type: 'info' });
 });
 
 const PORT = process.env.PORT || 3000;

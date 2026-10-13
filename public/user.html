@@ -11,7 +11,7 @@
 </head>
 <body class="min-h-screen flex flex-col">
   <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
-    <h1 class="font-bold text-white text-base">User Hosting & Interactive Terminal</h1>
+    <h1 class="font-bold text-white text-base">User Hosting & Execution Terminal</h1>
     <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-1.5 rounded-lg border border-rose-500/20">Logout</button>
   </header>
 
@@ -29,14 +29,12 @@
       </div>
     </div>
 
-    <!-- Interactive Terminal Box -->
     <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[520px] shadow-xl">
       <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2 flex justify-between items-center">
         <span>Interactive Live Terminal</span>
         <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
       </div>
       <div id="terminal" class="flex-1 overflow-y-auto space-y-1 pr-1"></div>
-      <!-- Command Input Bar -->
       <div class="pt-3 border-t border-slate-800 flex gap-2">
         <input type="text" id="terminalInput" placeholder="Type command (e.g. pip install aiohttp)..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500">
         <button onclick="sendTerminalCommand()" class="bg-indigo-600 px-4 py-2 rounded-xl text-xs text-white font-semibold hover:bg-indigo-500 transition">Run</button>
@@ -49,43 +47,56 @@
 
     async function uploadFile() {
       const file = document.getElementById('fileInput').files[0];
-      if (!file) return alert('Select file!');
+      if (!file) return alert('Pehle file select karo!');
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.success) { alert('Uploaded!'); loadFiles(); }
+      
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) { 
+          alert('File successfully upload ho gayi!'); 
+          loadFiles(); 
+        } else { 
+          alert(data.error || 'Upload fail ho gaya.');
+          if (res.status === 401) window.location.href = '/';
+        }
+      } catch (err) {
+        alert('Network error during upload.');
+      }
     }
 
     async function loadFiles() {
-      const res = await fetch('/api/files');
-      const data = await res.json();
-      const div = document.getElementById('fileList');
-      div.innerHTML = '';
-      if (!data.files || data.files.length === 0) { div.innerHTML = '<span class="text-slate-500">No hosted files yet.</span>'; return; }
-      data.files.forEach(f => {
-        let ext = f.originalname.split('.').pop().toLowerCase();
-        let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/30 hover:bg-emerald-600/30 font-medium">Run Script</button>` : '';
-        let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="bg-indigo-600/20 text-indigo-400 px-2.5 py-1 rounded border border-indigo-500/30 font-medium">View Live</a>` : '';
-        
-        div.innerHTML += `<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-          <div>
-            <p class="font-medium text-slate-200">${f.originalname}</p>
-            <p class="text-[10px] text-slate-500">${(f.size/1024).toFixed(2)} KB</p>
-          </div>
-          <div class="space-x-2 flex items-center">
-            ${runBtn}
-            ${viewBtn}
-            <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
-            <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
-          </div>
-        </div>`;
-      });
+      try {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        const div = document.getElementById('fileList');
+        div.innerHTML = '';
+        if (!data.files || data.files.length === 0) { div.innerHTML = '<span class="text-slate-500">No hosted files yet.</span>'; return; }
+        data.files.forEach(f => {
+          let ext = f.originalname.split('.').pop().toLowerCase();
+          let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/30 hover:bg-emerald-600/30 font-medium">Run Script</button>` : '';
+          let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="bg-indigo-600/20 text-indigo-400 px-2.5 py-1 rounded border border-indigo-500/30 font-medium">View Live</a>` : '';
+          
+          div.innerHTML += `<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+            <div>
+              <p class="font-medium text-slate-200">${f.originalname}</p>
+              <p class="text-[10px] text-slate-500">${(f.size/1024).toFixed(2)} KB</p>
+            </div>
+            <div class="space-x-2 flex items-center">
+              ${runBtn}
+              ${viewBtn}
+              <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
+              <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
+            </div>
+          </div>`;
+        });
+      } catch (err) { console.error(err); }
     }
 
     async function runFile(filename) { await fetch(`/api/run/${filename}`, { method: 'POST' }); }
     async function deleteFile(filename) {
-      if (confirm('Delete?')) { await fetch(`/api/delete/${filename}`, { method: 'DELETE' }); loadFiles(); }
+      if (confirm('Delete karna hai?')) { await fetch(`/api/delete/${filename}`, { method: 'DELETE' }); loadFiles(); }
     }
 
     async function sendTerminalCommand() {

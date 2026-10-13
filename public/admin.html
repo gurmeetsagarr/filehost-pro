@@ -12,8 +12,8 @@
 <body class="min-h-screen flex flex-col">
   <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
     <div>
-      <h1 class="font-bold text-white text-base">Master Admin Hosting & Interactive Terminal</h1>
-      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control + Terminal)</p>
+      <h1 class="font-bold text-white text-base">Master Admin Hosting & Terminal Panel</h1>
+      <p class="text-xs text-indigo-400 font-mono">Logged in as: gurmeet (Full Control + Run + Terminal)</p>
     </div>
     <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-2 rounded-lg border border-rose-500/20">Logout</button>
   </header>
@@ -44,7 +44,6 @@
       </div>
     </div>
 
-    <!-- Admin Interactive Terminal -->
     <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[600px] shadow-xl">
       <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2 flex justify-between items-center">
         <span>Interactive Master Terminal</span>
@@ -63,55 +62,67 @@
 
     async function adminUpload() {
       const file = document.getElementById('adminFileInput').files[0];
-      if (!file) return alert('Select file!');
+      if (!file) return alert('Pehle file select karo!');
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.success) { alert('Uploaded!'); loadAdminData(); }
+      
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) { 
+          alert('File successfully upload ho gayi!'); 
+          loadAdminData(); 
+        } else { 
+          alert(data.error || 'Upload fail ho gaya.');
+          if (res.status === 401) window.location.href = '/';
+        }
+      } catch (err) {
+        alert('Network error during upload.');
+      }
     }
 
     async function loadAdminData() {
-      const res = await fetch('/api/files');
-      const data = await res.json();
-      if (data.success) {
-        const tbody = document.getElementById('adminTableBody');
-        tbody.innerHTML = '';
-        if (data.files.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">No files hosted yet.</td></tr>`;
-          return;
-        }
-        data.files.forEach(f => {
-          let ext = f.originalname.split('.').pop().toLowerCase();
-          let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="text-emerald-400 hover:underline font-medium mr-2">Run</button>` : '';
-          let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="text-indigo-400 hover:underline font-medium mr-2">View</a>` : '';
+      try {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        if (data.success) {
+          const tbody = document.getElementById('adminTableBody');
+          tbody.innerHTML = '';
+          if (data.files.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">No files hosted yet.</td></tr>`;
+            return;
+          }
+          data.files.forEach(f => {
+            let ext = f.originalname.split('.').pop().toLowerCase();
+            let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="text-emerald-400 hover:underline font-medium mr-2">Run Script</button>` : '';
+            let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="text-indigo-400 hover:underline font-medium mr-2">View Live</a>` : '';
 
-          tbody.innerHTML += `
-            <tr class="hover:bg-slate-800/40">
-              <td class="py-3 font-semibold text-indigo-400">${f.uploader}</td>
-              <td class="py-3 text-slate-200">${f.originalname}</td>
-              <td class="py-3 text-slate-400 font-mono">${(f.size/1024).toFixed(2)} KB</td>
-              <td class="py-3 text-right space-x-2">
-                ${runBtn}
-                ${viewBtn}
-                <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
-                <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
-              </td>
-            </tr>`;
-        });
-      }
+            tbody.innerHTML += `
+              <tr class="hover:bg-slate-800/40">
+                <td class="py-3 font-semibold text-indigo-400">${f.uploader}</td>
+                <td class="py-3 text-slate-200">${f.originalname}</td>
+                <td class="py-3 text-slate-400 font-mono">${(f.size/1024).toFixed(2)} KB</td>
+                <td class="py-3 text-right space-x-2">
+                  ${runBtn}
+                  ${viewBtn}
+                  <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
+                  <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
+                </td>
+              </tr>`;
+          });
+        }
+      } catch (err) { console.error(err); }
     }
 
     async function runFile(filename) { await fetch(`/api/run/${filename}`, { method: 'POST' }); }
     async function deleteFile(filename) {
-      if (confirm('Delete?')) { await fetch(`/api/delete/${filename}`, { method: 'DELETE' }); loadAdminData(); }
+      if (confirm('Delete karna hai?')) { await fetch(`/api/delete/${filename}`, { method: 'DELETE' }); loadAdminData(); }
     }
 
     async function sendTerminalCommand() {
       const input = document.getElementById('terminalInput');
       const cmd = input.value.trim();
       if (!cmd) return;
-      input.value = false || input.value.trim();
       input.value = '';
       await fetch('/api/terminal/exec', {
         method: 'POST',

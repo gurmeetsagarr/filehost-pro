@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>User Dashboard — FileHost Pro</title>
+  <title>User Hosting Portal — FileHost Pro</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
   <script src="/socket.io/socket.io.js"></script>
@@ -11,26 +11,29 @@
 </head>
 <body class="min-h-screen flex flex-col">
   <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
-    <h1 class="font-bold text-white text-base">User Hosting Portal</h1>
+    <h1 class="font-bold text-white text-base">User Hosting & Execution Portal</h1>
     <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-1.5 rounded-lg border border-rose-500/20">Logout</button>
   </header>
 
-  <main class="flex-1 p-6 max-w-5xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+  <main class="flex-1 p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div class="space-y-6">
-      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6">
-        <h2 class="text-sm font-semibold text-white mb-3">Upload & Host File</h2>
+      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
+        <h2 class="text-sm font-semibold text-white mb-3">Upload Code / Script / File</h2>
         <input type="file" id="fileInput" class="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:bg-indigo-600 file:text-white cursor-pointer">
-        <button onclick="uploadFile()" class="mt-3 w-full py-2.5 bg-indigo-600 rounded-xl text-xs font-semibold text-white">Upload File</button>
+        <button onclick="uploadFile()" class="mt-3 w-full py-2.5 bg-indigo-600 rounded-xl text-xs font-semibold text-white hover:bg-indigo-500 transition">Upload & Prepare Host</button>
       </div>
 
-      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6">
-        <h2 class="text-sm font-semibold text-white mb-3">Your Hosted Files</h2>
-        <div id="fileList" class="space-y-2 text-xs"></div>
+      <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
+        <h2 class="text-sm font-semibold text-white mb-3">Hosted Files & Execution Control</h2>
+        <div id="fileList" class="space-y-3 text-xs"></div>
       </div>
     </div>
 
-    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[400px]">
-      <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2">Live Terminal</div>
+    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[500px] shadow-xl">
+      <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2 flex justify-between items-center">
+        <span>Live Server Execution Terminal</span>
+        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
+      </div>
       <div id="terminal" class="flex-1 overflow-y-auto space-y-1"></div>
     </div>
   </main>
@@ -53,19 +56,46 @@
       const data = await res.json();
       const div = document.getElementById('fileList');
       div.innerHTML = '';
-      if (!data.files || data.files.length === 0) { div.innerHTML = '<span class="text-slate-500">No files uploaded.</span>'; return; }
+      if (!data.files || data.files.length === 0) { div.innerHTML = '<span class="text-slate-500">No hosted files yet.</span>'; return; }
       data.files.forEach(f => {
-        div.innerHTML += `<div class="flex justify-between items-center bg-slate-950 p-3 rounded-xl border border-slate-800">
-          <span>${f.originalname}</span>
-          <a href="/api/download/${f.filename}" class="text-indigo-400 font-medium">Download</a>
+        let ext = f.originalname.split('.').pop().toLowerCase();
+        let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/30 hover:bg-emerald-600/30 font-medium">Run Script</button>` : '';
+        let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="bg-indigo-600/20 text-indigo-400 px-2.5 py-1 rounded border border-indigo-500/30 hover:bg-indigo-600/30 font-medium">View Live</a>` : '';
+        
+        div.innerHTML += `<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+          <div>
+            <p class="font-medium text-slate-200">${f.originalname}</p>
+            <p class="text-[10px] text-slate-500">${(f.size/1024).toFixed(2)} KB</p>
+          </div>
+          <div class="space-x-2 flex items-center">
+            ${runBtn}
+            ${viewBtn}
+            <a href="/api/download/${f.filename}" class="text-indigo-400 hover:underline">Download</a>
+            <button onclick="deleteFile('${f.filename}')" class="text-rose-400 hover:underline">Delete</button>
+          </div>
         </div>`;
       });
+    }
+
+    async function runFile(filename) {
+      await fetch(`/api/run/${filename}`, { method: 'POST' });
+    }
+
+    async function deleteFile(filename) {
+      if (confirm('Delete this file?')) {
+        await fetch(`/api/delete/${filename}`, { method: 'DELETE' });
+        loadFiles();
+      }
     }
 
     const socket = io();
     socket.on('terminal-log', (d) => {
       const term = document.getElementById('terminal');
-      term.innerHTML += `<div>[${d.timestamp}] ${d.message}</div>`;
+      let color = 'text-slate-300';
+      if (d.type === 'success') color = 'text-emerald-400';
+      if (d.type === 'error') color = 'text-rose-400';
+      if (d.type === 'warning') color = 'text-amber-400';
+      term.innerHTML += `<div class="leading-relaxed"><span class="text-slate-500">[${d.timestamp}]</span> <span class="${color}">${d.message}</span></div>`;
       term.scrollTop = term.scrollHeight;
     });
 

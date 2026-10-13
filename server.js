@@ -10,17 +10,18 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Uploads directory auto-create
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
+const dbFile = path.join(__dirname, 'users.json');
 
-// Multer storage config for any file type
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(dbFile)) fs.writeFileSync(dbFile, JSON.stringify([]));
+
+// Helper to read/write users
+const getUsers = () => JSON.parse(fs.readFileSync(dbFile));
+const saveUsers = (users) => fs.writeFileSync(dbFile, JSON.stringify(users, null, 2));
+
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
+    destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         cb(null, uniqueSuffix + '-' + file.originalname);
@@ -33,120 +34,143 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(session({
-    secret: 'gurmeet-secret-key-0711',
+    secret: 'gurmeet-secret-high-end-0711',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 8 * 60 * 60 * 1000 } // 8 hours session
+    cookie: { maxAge: 8 * 60 * 60 * 1000 }
 }));
 
-// Terminal logs helper function
 function broadcastLog(io, message, type = 'info') {
     const timestamp = new Date().toLocaleTimeString();
     io.emit('terminal-log', { timestamp, message, type });
 }
 
-// Login Route
+// --- AUTH ROUTES ---
+
+// User Signup
+app.post('/api/auth/signup', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ success: false, error: 'All fields required' });
+    
+    let users = getUsers();
+    if (users.find(u => u.username === username) || username === 'gurmeet') {
+        return res.status(400).json({ success: false, error: 'Username already exists' });
+    }
+
+    users.push({ username, password, createdAt: new Date(), files: [], activeTime: 0 });
+    saveUsers(users);
+    broadcastLog(io, `New user registered: ${username}`, 'success');
+    res.json({ success: true });
+});
+
+// Login (Admin or User)
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
+
     if (username === 'gurmeet' && password === 'gurmeet0711') {
-        req.session.user = {
-            username: username,
-            loginTime: new Date(),
-            ip: req.ip
-        };
-        broadcastLog(io, `Admin '${username}' logged in successfully from IP: ${req.ip}`, 'success');
-        res.json({ success: true });
-    } else {
-        broadcastLog(io, `Failed login attempt with username: '${username}'`, 'error');
-        res.status(401).json({ success: false, error: 'Invalid username or password' });
+        req.session.user = { username, role: 'admin', loginTime: new Date() };
+        broadcastLog(io, `Admin 'gurmeet' logged in.`, 'success');
+        return res.json({ success: true, role: 'admin' });
     }
+
+    let users = getUsers();
+    let user = users.find(u => u.username === username && u.password === password);
+    if (user) {
+        req.session.user = { username, role: 'user', loginTime: new Date() };
+        broadcastLog(io, `User '${username}' logged in.`, 'info');
+        return res.json({ success: true, role: 'user' });
+    }
+
+    broadcastLog(io, `Failed login attempt for: '${username}'`, 'error');
+    res.status(401).json({ success: false, error: 'Invalid username or password' });
 });
 
-// Logout Route
 app.post('/api/auth/logout', (req, res) => {
-    const user = req.session.user?.username || 'Unknown';
-    req.session.destroy(() => {
-        broadcastLog(io, `Admin '${user}' logged out.`, 'info');
-        res.json({ success: true });
-    });
+    req.session.destroy(() => res.json({ success: true }));
 });
 
-// Dashboard Route Protection
+// --- PAGE ROUTING ---
 app.get('/dashboard', (req, res) => {
-    if (req.session && req.session.user) {
-        res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+    if (!req.session.user) return res.redirect('/');
+    if (req.session.user.role === 'admin') {
+        res.sendFile(path.join(__dirname, 'public', 'admin.html'));
     } else {
-        res.redirect('/');
+        res.sendFile(path.join(__dirname, 'public', 'user.html'));
     }
 });
 
-// File Upload Route
+// --- FILE MANAGEMENT ---
 app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ success: false, error: 'No file uploaded.' });
-    }
+    if (!req.file || !req.session.user) return res.status(400).json({ success: false, error: 'Unauthorized or no file' });
+
     const fileInfo = {
         originalname: req.file.originalname,
         filename: req.file.filename,
         size: req.file.size,
         uploadTime: new Date()
     };
-    broadcastLog(io, `File uploaded: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`, 'success');
+
+    if (req.session.user.role === 'user') {
+        let users = getUsers();
+        let user = users.find(u => u.username === req.session.user.username);
+        if (user) {
+            if (!user.files) user.files = [];
+            user.files.push(fileInfo);
+            saveUsers(users);
+        }
+    }
+
+    broadcastLog(io, `File uploaded by ${req.session.user.username}: ${req.file.originalname}`, 'success');
     res.json({ success: true, file: fileInfo });
 });
 
-// Get Files List Route
+// Get Files (Admin sees all users' files, User sees only their files)
 app.get('/api/files', (req, res) => {
-    fs.readdir(uploadDir, (err, files) => {
-        if (err) {
-            return res.status(500).json({ success: false, error: 'Unable to scan files.' });
-        }
-        const fileList = files.map(file => {
-            const filePath = path.join(uploadDir, file);
-            const stats = fs.statSync(filePath);
-            return {
-                filename: file,
-                originalName: file.substring(file.indexOf('-') + 1),
-                size: stats.size,
-                createdAt: stats.birthtime
-            };
-        });
-        res.json({ success: true, files: fileList });
-    });
-});
+    if (!req.session.user) return res.status(401).json({ success: false });
 
-// Download File Route
-app.get('/api/download/:filename', (req, res) => {
-    const filename = req.params.filename;
-    const filePath = path.join(uploadDir, filename);
-    if (fs.existsSync(filePath)) {
-        broadcastLog(io, `File downloaded by admin: ${filename}`, 'info');
-        res.download(filePath);
+    if (req.session.user.role === 'admin') {
+        let users = getUsers();
+        let allFiles = [];
+        users.forEach(u => {
+            if (u.files) {
+                u.files.forEach(f => allFiles.push({ ...f, uploader: u.username }));
+            }
+        });
+        // Also get root uploads
+        res.json({ success: true, users: users, files: allFiles });
     } else {
-        res.status(404).json({ success: false, error: 'File not found.' });
+        let users = getUsers();
+        let user = users.find(u => u.username === req.session.user.username);
+        res.json({ success: true, files: user ? user.files || [] : [] });
     }
 });
 
-// Delete File Route
+app.get('/api/download/:filename', (req, res) => {
+    const filePath = path.join(uploadDir, req.params.filename);
+    if (fs.existsSync(filePath)) res.download(filePath);
+    else res.status(404).json({ error: 'File not found' });
+});
+
 app.delete('/api/delete/:filename', (req, res) => {
-    const filename = req.params.filename;
-    const filePath = path.join(uploadDir, filename);
+    const filePath = path.join(uploadDir, req.params.filename);
     if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        broadcastLog(io, `File deleted by admin: ${filename}`, 'warning');
-        res.json({ success: true, message: 'File deleted successfully.' });
+        // Remove from user db if exists
+        let users = getUsers();
+        users.forEach(u => {
+            if (u.files) u.files = u.files.filter(f => f.filename !== req.params.filename);
+        });
+        saveUsers(users);
+        broadcastLog(io, `File deleted: ${req.params.filename}`, 'warning');
+        res.json({ success: true });
     } else {
-        res.status(404).json({ success: false, error: 'File not found.' });
+        res.status(404).json({ error: 'File not found' });
     }
 });
 
-// Socket.io Connection
 io.on('connection', (socket) => {
-    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to Live Terminal Server.', type: 'info' });
-    socket.on('disconnect', () => {});
+    socket.emit('terminal-log', { timestamp: new Date().toLocaleTimeString(), message: 'Connected to High-End Execution Terminal.', type: 'info' });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

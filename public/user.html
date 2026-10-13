@@ -11,7 +11,7 @@
 </head>
 <body class="min-h-screen flex flex-col">
   <header class="border-b border-indigo-900/30 bg-slate-900/60 px-6 py-4 flex justify-between items-center">
-    <h1 class="font-bold text-white text-base">User Hosting & Execution Portal</h1>
+    <h1 class="font-bold text-white text-base">User Hosting & Interactive Terminal</h1>
     <button onclick="logout()" class="text-xs bg-rose-500/10 text-rose-400 px-3 py-1.5 rounded-lg border border-rose-500/20">Logout</button>
   </header>
 
@@ -20,7 +20,7 @@
       <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
         <h2 class="text-sm font-semibold text-white mb-3">Upload Code / Script / File</h2>
         <input type="file" id="fileInput" class="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:bg-indigo-600 file:text-white cursor-pointer">
-        <button onclick="uploadFile()" class="mt-3 w-full py-2.5 bg-indigo-600 rounded-xl text-xs font-semibold text-white hover:bg-indigo-500 transition">Upload & Prepare Host</button>
+        <button onclick="uploadFile()" class="mt-3 w-full py-2.5 bg-indigo-600 rounded-xl text-xs font-semibold text-white hover:bg-indigo-500 transition">Upload File</button>
       </div>
 
       <div class="bg-slate-900/70 border border-indigo-900/40 rounded-2xl p-6 shadow-xl">
@@ -29,12 +29,18 @@
       </div>
     </div>
 
-    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[500px] shadow-xl">
+    <!-- Interactive Terminal Box -->
+    <div class="bg-slate-950 border border-indigo-900/40 rounded-2xl p-4 font-mono text-[11px] flex flex-col h-[520px] shadow-xl">
       <div class="text-slate-400 pb-2 border-b border-slate-800 mb-2 flex justify-between items-center">
-        <span>Live Server Execution Terminal</span>
+        <span>Interactive Live Terminal</span>
         <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
       </div>
-      <div id="terminal" class="flex-1 overflow-y-auto space-y-1"></div>
+      <div id="terminal" class="flex-1 overflow-y-auto space-y-1 pr-1"></div>
+      <!-- Command Input Bar -->
+      <div class="pt-3 border-t border-slate-800 flex gap-2">
+        <input type="text" id="terminalInput" placeholder="Type command (e.g. pip install aiohttp)..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500">
+        <button onclick="sendTerminalCommand()" class="bg-indigo-600 px-4 py-2 rounded-xl text-xs text-white font-semibold hover:bg-indigo-500 transition">Run</button>
+      </div>
     </div>
   </main>
 
@@ -43,12 +49,12 @@
 
     async function uploadFile() {
       const file = document.getElementById('fileInput').files[0];
-      if (!file) return alert('Select a file first!');
+      if (!file) return alert('Select file!');
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       const data = await res.json();
-      if (data.success) { alert('Uploaded successfully!'); loadFiles(); }
+      if (data.success) { alert('Uploaded!'); loadFiles(); }
     }
 
     async function loadFiles() {
@@ -60,7 +66,7 @@
       data.files.forEach(f => {
         let ext = f.originalname.split('.').pop().toLowerCase();
         let runBtn = (ext === 'py' || ext === 'js') ? `<button onclick="runFile('${f.filename}')" class="bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/30 hover:bg-emerald-600/30 font-medium">Run Script</button>` : '';
-        let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="bg-indigo-600/20 text-indigo-400 px-2.5 py-1 rounded border border-indigo-500/30 hover:bg-indigo-600/30 font-medium">View Live</a>` : '';
+        let viewBtn = (ext === 'html') ? `<a href="/uploads/${f.filename}" target="_blank" class="bg-indigo-600/20 text-indigo-400 px-2.5 py-1 rounded border border-indigo-500/30 font-medium">View Live</a>` : '';
         
         div.innerHTML += `<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
           <div>
@@ -77,16 +83,26 @@
       });
     }
 
-    async function runFile(filename) {
-      await fetch(`/api/run/${filename}`, { method: 'POST' });
+    async function runFile(filename) { await fetch(`/api/run/${filename}`, { method: 'POST' }); }
+    async function deleteFile(filename) {
+      if (confirm('Delete?')) { await fetch(`/api/delete/${filename}`, { method: 'DELETE' }); loadFiles(); }
     }
 
-    async function deleteFile(filename) {
-      if (confirm('Delete this file?')) {
-        await fetch(`/api/delete/${filename}`, { method: 'DELETE' });
-        loadFiles();
-      }
+    async function sendTerminalCommand() {
+      const input = document.getElementById('terminalInput');
+      const cmd = input.value.trim();
+      if (!cmd) return;
+      input.value = '';
+      await fetch('/api/terminal/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd })
+      });
     }
+
+    document.getElementById('terminalInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendTerminalCommand();
+    });
 
     const socket = io();
     socket.on('terminal-log', (d) => {
